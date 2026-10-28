@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관계도 틀 생성기</title>
+    <!-- HTML 요소를 이미지로 변환해주는 html2canvas 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f8f9fa;
+            user-select: none;
+        }
+
+        /* 컨트롤 영역 (저장 버튼 위치) */
+        .control-panel {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .save-btn {
+            background-color: #4c6ef5;
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(76, 110, 245, 0.3);
+            transition: all 0.2s;
+        }
+
+        .save-btn:hover {
+            background-color: #3b5bdb;
+            transform: translateY(-1px);
+        }
+
+        /* 메인 캔버스 영역 */
+        .stage-container {
+            position: relative;
+            width: 850px;
+            height: 850px;
+            background-color: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+
+        /* 좌측 상단 범례 */
+        .legend-container {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            background: transparent;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            z-index: 100;
+            border: none;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #495057;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1.5px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .legend-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .legend-item.selected {
+            border-color: #333;
+            background-color: #f1f3f5;
+        }
+
+        .legend-item.cancel-mode.selected {
+            border-color: #ff4757;
+            background-color: #ffe0e3;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        /* SVG 라인 캔버스 */
+        #svgCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        #svgCanvas g {
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        #svgCanvas line {
+            transition: stroke-width 0.2s;
+        }
+
+        #svgCanvas g:hover line {
+            stroke-width: 6;
+            opacity: 0.8;
+        }
+
+        #svgCanvas text {
+            font-size: 12px;
+            font-weight: 600;
+            fill: #212529;
+            text-anchor: middle;
+            paint-order: stroke;
+            stroke: #ffffff;
+            stroke-width: 4px;
+            stroke-linejoin: round;
+        }
+
+        /* 원형 노드 기본 스타일 */
+        .circle-node {
+            position: absolute;
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background-color: #e9ecef;
+            border: 3px solid #ced4da;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            z-index: 10;
+        }
+
+        .circle-node:hover {
+            border-color: #4c6ef5;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+        }
+
+        .circle-node.connecting {
+            border-color: #ff6b6b !important;
+            box-shadow: 0 0 12px rgba(255, 107, 107, 0.8);
+        }
+
+        .circle-node.center-node {
+            border: 3px solid #748ffc;
+            background-color: #edf2ff;
+            z-index: 20;
+        }
+
+        .circle-node span {
+            font-size: 12px;
+            color: #868e96;
+            text-align: center;
+            pointer-events: none; 
+            padding: 4px;
+        }
+
+        /* ---------------------------------------------------- */
+        /* 이미지 저장 시에만 적용할 클래스 (외곽선 및 삭제범례 숨김) */
+        /* ---------------------------------------------------- */
+        .exporting .circle-node {
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        .exporting .cancel-mode {
+            display: none !important;
+        }
+
+        #imageInput {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 저장 버튼 패널 -->
+    <div class="control-panel">
+        <button class="save-btn" id="saveBtn">📷 이미지로 저장</button>
+    </div>
+
+    <!-- 메인 원형 배치 원판 -->
+    <div class="stage-container" id="stage">
+
+        <!-- 좌측 상단 범례 -->
+        <div class="legend-container" id="legendContainer">
+            <div class="legend-item" data-color="#2ed573">
+                <div class="legend-color" style="background-color: #2ed573;"></div>
+                <span>친관</span>
+            </div>
+            <div class="legend-item" data-color="#ff4757">
+                <div class="legend-color" style="background-color: #ff4757;"></div>
+                <span>혐관</span>
+            </div>
+            <div class="legend-item" data-color="#ffa502">
+                <div class="legend-color" style="background-color: #ffa502;"></div>
+                <span>일방적 혐관</span>
+            </div>
+            <div class="legend-item" data-color="#eccc68">
+                <div class="legend-color" style="background-color: #eccc68;"></div>
+                <span>친혐관</span>
+            </div>
+            <div class="legend-item" data-color="#70a1ff">
+                <div class="legend-color" style="background-color: #70a1ff;"></div>
+                <span>평범</span>
+            </div>
+            <div class="legend-item" data-color="#2f3542">
+                <div class="legend-color" style="background-color: #2f3542;"></div>
+                <span>불편한 사이</span>
+            </div>
+            <!-- 저장 시 숨겨질 관계 삭제 항목 -->
+            <div class="legend-item cancel-mode" data-action="delete">
+                <div class="legend-color" style="background-color: #333;">✕</div>
+                <span style="color: #d63031;">관계 삭제</span>
+            </div>
+        </div>
+
+        <!-- 관계 선을 그리는 SVG Layer -->
+        <svg id="svgCanvas"></svg>
+
+        <!-- 중앙 원 -->
+        <div class="circle-node center-node" id="centerNode" style="left: 425px; top: 425px;">
+            <span>중앙 (더블클릭)</span>
+        </div>
+    </div>
+
+    <!-- 숨겨진 이미지 파일 업로더 -->
+    <input type="file" id="imageInput" accept="image/*">
+
+    <script>
+        const stage = document.getElementById('stage');
+        const svgCanvas = document.getElementById('svgCanvas');
+        const imageInput = document.getElementById('imageInput');
+        const centerNode = document.getElementById('centerNode');
+        const legendItems = document.querySelectorAll('.legend-item');
+        const saveBtn = document.getElementById('saveBtn');
+        
+        let outerCircles = []; 
+        let targetCircleForImage = null; 
+        const STAGE_RADIUS = 280; 
+
+        let selectedColor = null; 
+        let isDeleteMode = false; 
+        let firstSelectedCircle = null; 
+        let linesData = []; 
+
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        // [범례 선택 이벤트]
+        legendItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+
+                const action = item.getAttribute('data-action');
+
+                if (item.classList.contains('selected')) {
+                    clearLegendSelection();
+                } else {
+                    legendItems.forEach(i => i.classList.remove('selected'));
+                    item.classList.add('selected');
+
+                    if (action === 'delete') {
+                        isDeleteMode = true;
+                        selectedColor = null;
+                    } else {
+                        isDeleteMode = false;
+                        selectedColor = item.getAttribute('data-color');
+                    }
+                }
+                resetConnectingState();
+            });
+        });
+
+        function clearLegendSelection() {
+            legendItems.forEach(i => i.classList.remove('selected'));
+            selectedColor = null;
+            isDeleteMode = false;
+        }
+
+        // [원 위치 정렬 및 연결된 선 좌표 재갱신]
+        function rearrangeCircles() {
+            const count = outerCircles.length;
+            if (count > 0) {
+                const angleStep = (2 * Math.PI) / count;
+                const startAngle = -Math.PI / 2; 
+
+                outerCircles.forEach((circle, index) => {
+                    const angle = startAngle + index * angleStep;
+                    const x = 425 + STAGE_RADIUS * Math.cos(angle);
+                    const y = 425 + STAGE_RADIUS * Math.sin(angle);
+
+                    circle.style.left = `${x}px`;
+                    circle.style.top = `${y}px`;
+                });
+            }
+            updateAllLinesPosition();
+        }
+
+        // [선 및 줄바꿈 지원 텍스트 위치 업데이트]
+        function updateAllLinesPosition() {
+            linesData.forEach(item => {
+                const x1 = item.fromCircle.offsetLeft;
+                const y1 = item.fromCircle.offsetTop;
+                const x2 = item.toCircle.offsetLeft;
+                const y2 = item.toCircle.offsetTop;
+
+                item.lineElement.setAttribute('x1', x1);
+                item.lineElement.setAttribute('y1', y1);
+                item.lineElement.setAttribute('x2', x2);
+                item.lineElement.setAttribute('y2', y2);
+
+                if (item.textElement) {
+                    const midX = (x1 + x2) / 2;
+                    const midY = (y1 + y2) / 2;
+                    item.textElement.setAttribute('x', midX);
+
+                    const tspans = item.textElement.querySelectorAll('tspan');
+                    const totalLines = tspans.length;
+                    const lineHeight = 14; 
+                    
+                    tspans.forEach((tspan, index) => {
+                        tspan.setAttribute('x', midX);
+                        const offsetY = midY - ((totalLines - 1) * lineHeight / 2) + (index * lineHeight);
+                        tspan.setAttribute('y', offsetY);
+                    });
+                }
+            });
+        }
+
+        function renderMultilineText(textElement, textContent) {
+            textElement.innerHTML = '';
+            if (!textContent) return;
+
+            const lines = textContent.split('\n');
+            lines.forEach(lineText => {
+                const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                tspan.textContent = lineText;
+                textElement.appendChild(tspan);
+            });
+        }
+
+        function resetConnectingState() {
+            if (firstSelectedCircle) {
+                firstSelectedCircle.classList.remove('connecting');
+                firstSelectedCircle = null;
+            }
+        }
+
+        // [원 클릭 이벤트]
+        function setupCircleEvents(circleElement) {
+            circleElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+
+                if (selectedColor) {
+                    if (!firstSelectedCircle) {
+                        firstSelectedCircle = circleElement;
+                        circleElement.classList.add('connecting');
+                    } else if (firstSelectedCircle === circleElement) {
+                        resetConnectingState();
+                    } else {
+                        createLine(firstSelectedCircle, circleElement, selectedColor);
+                        resetConnectingState();
+                    }
+                } 
+                else if (isDeleteMode) {
+                    if (!firstSelectedCircle) {
+                        firstSelectedCircle = circleElement;
+                        circleElement.classList.add('connecting');
+                    } else if (firstSelectedCircle === circleElement) {
+                        resetConnectingState();
+                    } else {
+                        removeLineBetween(firstSelectedCircle, circleElement);
+                        resetConnectingState();
+                    }
+                }
+            });
+
+            circleElement.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                resetConnectingState();
+                targetCircleForImage = circleElement;
+                imageInput.click();
+            });
+
+            circleElement.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                if (circleElement.classList.contains('center-node')) {
+                    alert('중앙 원은 삭제할 수 없습니다.');
+                    return;
+                }
+
+                removeLinesByCircle(circleElement);
+                outerCircles = outerCircles.filter(item => item !== circleElement);
+                circleElement.remove();
+                rearrangeCircles();
+            });
+        }
+
+        function createLine(fromCircle, toCircle, color) {
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('stroke', color);
+            line.setAttribute('stroke-width', '4');
+            line.setAttribute('stroke-linecap', 'round');
+
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+
+            group.appendChild(line);
+            group.appendChild(text);
+
+            const lineObj = {
+                fromCircle: fromCircle,
+                toCircle: toCircle,
+                groupElement: group,
+                lineElement: line,
+                textElement: text,
+                rawText: ""
+            };
+
+            group.addEventListener('click', (e) => {
+                e.stopPropagation();
+                
+                const newText = prompt("선에 대한 설명을 입력하세요.\n(줄바꿈을 하려면 문장 사이에 \\n 을 입력하세요)", lineObj.rawText);
+                
+                if (newText !== null) {
+                    if (newText.trim() === "") {
+                        group.remove();
+                        linesData = linesData.filter(item => item.groupElement !== group);
+                    } else {
+                        lineObj.rawText = newText;
+                        const formattedText = newText.replace(/\\n/g, '\n');
+                        renderMultilineText(text, formattedText);
+                        updateAllLinesPosition();
+                    }
+                }
+            });
+
+            svgCanvas.appendChild(group);
+            linesData.push(lineObj);
+
+            updateAllLinesPosition();
+        }
+
+        function removeLineBetween(circleA, circleB) {
+            const targets = linesData.filter(
+                item => (item.fromCircle === circleA && item.toCircle === circleB) ||
+                        (item.fromCircle === circleB && item.toCircle === circleA)
+            );
+
+            targets.forEach(item => {
+                item.groupElement.remove();
+            });
+
+            linesData = linesData.filter(
+                item => !((item.fromCircle === circleA && item.toCircle === circleB) ||
+                          (item.fromCircle === circleB && item.toCircle === circleA))
+            );
+        }
+
+        function removeLinesByCircle(circleElement) {
+            const linesToRemove = linesData.filter(
+                item => item.fromCircle === circleElement || item.toCircle === circleElement
+            );
+
+            linesToRemove.forEach(item => {
+                item.groupElement.remove();
+            });
+
+            linesData = linesData.filter(
+                item => item.fromCircle !== circleElement && item.toCircle !== circleElement
+            );
+        }
+
+        stage.addEventListener('click', (e) => {
+            if (e.target === stage || e.target === svgCanvas) {
+                clearLegendSelection();
+                resetConnectingState();
+            }
+        });
+
+        stage.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+
+            if (e.target === stage || e.target === svgCanvas) {
+                const newCircle = document.createElement('div');
+                newCircle.className = 'circle-node';
+                
+                const label = document.createElement('span');
+                label.innerText = '이미지 추가';
+                newCircle.appendChild(label);
+
+                stage.appendChild(newCircle);
+                outerCircles.push(newCircle);
+
+                setupCircleEvents(newCircle);
+                rearrangeCircles();
+            }
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && targetCircleForImage) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    targetCircleForImage.style.backgroundImage = `url('${event.target.result}')`;
+                    
+                    const span = targetCircleForImage.querySelector('span');
+                    if (span) span.style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            }
+            imageInput.value = '';
+        });
+
+        // [이미지 저장 시 외곽선 및 삭제 범례 숨김 처리]
+        saveBtn.addEventListener('click', () => {
+            clearLegendSelection();
+            resetConnectingState();
+
+            // 1. 저장용 클래스 추가 (외곽선 및 ✕ 관계 삭제 요소 숨김)
+            stage.classList.add('exporting');
+
+            // 2. 캔버스 캡처
+            html2canvas(stage, {
+                scale: 2, 
+                useCORS: true, 
+                backgroundColor: "#ffffff"
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = '관계도_결과.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                // 3. 캡처 완료 후 원래 상태로 복구
+                stage.classList.remove('exporting');
+            }).catch(() => {
+                stage.classList.remove('exporting');
+            });
+        });
+
+        setupCircleEvents(centerNode);
+
+        for (let i = 0; i < 6; i++) {
+            const circle = document.createElement('div');
+            circle.className = 'circle-node';
+            
+            const label = document.createElement('span');
+            label.innerText = '이미지 추가';
+            circle.appendChild(label);
+
+            stage.appendChild(circle);
+            outerCircles.push(circle);
+            setupCircleEvents(circle);
+        }
+
+        rearrangeCircles();
+    </script>
+</body>
+</html>
