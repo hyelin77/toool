@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>관계도 틀 생성기</title>
+    <title>관계도 / 커플링 틀 생성기</title>
     <!-- HTML 요소를 이미지로 변환해주는 html2canvas 라이브러리 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
@@ -197,9 +197,7 @@
             padding: 4px;
         }
 
-        /* ---------------------------------------------------- */
-        /* 이미지 저장 시에만 적용할 클래스 (외곽선 및 삭제범례 숨김) */
-        /* ---------------------------------------------------- */
+        /* 이미지 저장 시에만 적용할 클래스 */
         .exporting .circle-node {
             border: none !important;
             box-shadow: none !important;
@@ -226,31 +224,31 @@
 
         <!-- 좌측 상단 범례 -->
         <div class="legend-container" id="legendContainer">
-            <div class="legend-item" data-color="#2ed573">
-                <div class="legend-color" style="background-color: #2ed573;"></div>
-                <span>친관</span>
-            </div>
+            
             <div class="legend-item" data-color="#ff4757">
-                <div class="legend-color" style="background-color: #ff4757;"></div>
+                <div class="legend-color" style="background-color: #FF5675;"></div>
                 <span>혐관</span>
             </div>
             <div class="legend-item" data-color="#ffa502">
-                <div class="legend-color" style="background-color: #ffa502;"></div>
+                <div class="legend-color" style="background-color: #FF9100;"></div>
                 <span>일방적 혐관</span>
             </div>
             <div class="legend-item" data-color="#eccc68">
-                <div class="legend-color" style="background-color: #eccc68;"></div>
+                <div class="legend-color" style="background-color: #FFD232;"></div>
                 <span>친혐관</span>
             </div>
+            <div class="legend-item" data-color="#2ed573">
+                <div class="legend-color" style="background-color: 	#8AE634;"></div>
+                <span>친관</span>
+            </div>
             <div class="legend-item" data-color="#70a1ff">
-                <div class="legend-color" style="background-color: #70a1ff;"></div>
+                <div class="legend-color" style="background-color: #3CB4FF;"></div>
                 <span>평범</span>
             </div>
             <div class="legend-item" data-color="#2f3542">
                 <div class="legend-color" style="background-color: #2f3542;"></div>
                 <span>불편한 사이</span>
             </div>
-            <!-- 저장 시 숨겨질 관계 삭제 항목 -->
             <div class="legend-item cancel-mode" data-action="delete">
                 <div class="legend-color" style="background-color: #333;">✕</div>
                 <span style="color: #d63031;">관계 삭제</span>
@@ -258,7 +256,9 @@
         </div>
 
         <!-- 관계 선을 그리는 SVG Layer -->
-        <svg id="svgCanvas"></svg>
+        <svg id="svgCanvas">
+            <defs id="markerDefs"></defs>
+        </svg>
 
         <!-- 중앙 원 -->
         <div class="circle-node center-node" id="centerNode" style="left: 425px; top: 425px;">
@@ -272,6 +272,7 @@
     <script>
         const stage = document.getElementById('stage');
         const svgCanvas = document.getElementById('svgCanvas');
+        const markerDefs = document.getElementById('markerDefs');
         const imageInput = document.getElementById('imageInput');
         const centerNode = document.getElementById('centerNode');
         const legendItems = document.querySelectorAll('.legend-item');
@@ -340,34 +341,116 @@
             updateAllLinesPosition();
         }
 
-        // [선 및 줄바꿈 지원 텍스트 위치 업데이트]
+        // [색상별 화살표 마커 가져오기 또는 생성]
+        function getOrCreateMarker(color) {
+            const markerId = 'arrow-' + color.replace('#', '');
+            if (!document.getElementById(markerId)) {
+                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+                marker.setAttribute('id', markerId);
+                marker.setAttribute('viewBox', '0 0 10 10');
+                marker.setAttribute('refX', '7');
+                marker.setAttribute('refY', '5');
+                marker.setAttribute('markerWidth', '6');
+                marker.setAttribute('markerHeight', '6');
+                marker.setAttribute('orient', 'auto-start-reverse');
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', 'M 0 1 L 10 5 L 0 9 z');
+                path.setAttribute('fill', color);
+
+                marker.appendChild(path);
+                markerDefs.appendChild(marker);
+            }
+            return markerId;
+        }
+
+        function getCircleId(circle) {
+            if (circle === centerNode) return 'center';
+            return 'outer_' + outerCircles.indexOf(circle);
+        }
+
+        // [선 좌표 및 글자 위치 정렬 - 글자 중앙 배치]
         function updateAllLinesPosition() {
+            const pairMap = new Map();
+
             linesData.forEach(item => {
-                const x1 = item.fromCircle.offsetLeft;
-                const y1 = item.fromCircle.offsetTop;
-                const x2 = item.toCircle.offsetLeft;
-                const y2 = item.toCircle.offsetTop;
+                const id1 = getCircleId(item.fromCircle);
+                const id2 = getCircleId(item.toCircle);
+                const key = id1 < id2 ? `${id1}_${id2}` : `${id2}_${id1}`;
 
-                item.lineElement.setAttribute('x1', x1);
-                item.lineElement.setAttribute('y1', y1);
-                item.lineElement.setAttribute('x2', x2);
-                item.lineElement.setAttribute('y2', y2);
-
-                if (item.textElement) {
-                    const midX = (x1 + x2) / 2;
-                    const midY = (y1 + y2) / 2;
-                    item.textElement.setAttribute('x', midX);
-
-                    const tspans = item.textElement.querySelectorAll('tspan');
-                    const totalLines = tspans.length;
-                    const lineHeight = 14; 
-                    
-                    tspans.forEach((tspan, index) => {
-                        tspan.setAttribute('x', midX);
-                        const offsetY = midY - ((totalLines - 1) * lineHeight / 2) + (index * lineHeight);
-                        tspan.setAttribute('y', offsetY);
-                    });
+                if (!pairMap.has(key)) {
+                    pairMap.set(key, []);
                 }
+                pairMap.get(key).push(item);
+            });
+
+            const circleRadius = 45; 
+            const offsetDist = 14; 
+            const textOffsetDist = 0; // 글자가 정확히 선의 중앙에 위치하도록 오프셋 0 설정[cite: 12]
+
+            pairMap.forEach(lines => {
+                const total = lines.length;
+
+                lines.forEach((item, idx) => {
+                    const fx = item.fromCircle.offsetLeft;
+                    const fy = item.fromCircle.offsetTop;
+                    const tx = item.toCircle.offsetLeft;
+                    const ty = item.toCircle.offsetTop;
+
+                    const dx = tx - fx;
+                    const dy = ty - fy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist === 0) return;
+
+                    const ux = dx / dist;
+                    const uy = dy / dist;
+
+                    // 자기 진행 방향 기준 우측 법선 벡터
+                    const nx = -uy;
+                    const ny = ux;
+
+                    let finalOffset = 0;
+                    if (total === 1) {
+                        finalOffset = 0;
+                    } else if (total === 2) {
+                        if (idx === 1) {
+                            const firstItem = lines[0];
+                            const isReverse = (firstItem.fromCircle === item.toCircle && firstItem.toCircle === item.fromCircle);
+                            finalOffset = isReverse ? offsetDist : -offsetDist;
+                        } else {
+                            finalOffset = offsetDist;
+                        }
+                    }
+
+                    const startX = fx + ux * circleRadius + nx * finalOffset;
+                    const startY = fy + uy * circleRadius + ny * finalOffset;
+                    const endX = tx - ux * circleRadius + nx * finalOffset;
+                    const endY = ty - uy * circleRadius + ny * finalOffset;
+
+                    item.lineElement.setAttribute('x1', startX);
+                    item.lineElement.setAttribute('y1', startY);
+                    item.lineElement.setAttribute('x2', endX);
+                    item.lineElement.setAttribute('y2', endY);
+
+                    // 글자를 정확히 선 중앙 위치에 설정
+                    if (item.textElement) {
+                        const midX = (startX + endX) / 2 + nx * textOffsetDist;
+                        const midY = (startY + endY) / 2 + ny * textOffsetDist;
+
+                        item.textElement.setAttribute('x', midX);
+
+                        const tspans = item.textElement.querySelectorAll('tspan');
+                        const totalLines = tspans.length;
+                        const lineHeight = 14; 
+                        
+                        tspans.forEach((tspan, index) => {
+                            tspan.setAttribute('x', midX);
+                            const offsetY = midY - ((totalLines - 1) * lineHeight / 2) + (index * lineHeight);
+                            tspan.setAttribute('y', offsetY);
+                        });
+                    }
+                });
             });
         }
 
@@ -402,6 +485,17 @@
                     } else if (firstSelectedCircle === circleElement) {
                         resetConnectingState();
                     } else {
+                        const existingLines = linesData.filter(
+                            item => (item.fromCircle === firstSelectedCircle && item.toCircle === circleElement) ||
+                                    (item.fromCircle === circleElement && item.toCircle === firstSelectedCircle)
+                        );
+
+                        if (existingLines.length >= 2) {
+                            alert('두 원 사이에는 최대 2개의 선만 연결할 수 있습니다.');
+                            resetConnectingState();
+                            return;
+                        }
+
                         createLine(firstSelectedCircle, circleElement, selectedColor);
                         resetConnectingState();
                     }
@@ -442,13 +536,17 @@
             });
         }
 
+        // [화살표 선 생성]
         function createLine(fromCircle, toCircle, color) {
             const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+            const markerId = getOrCreateMarker(color);
 
             const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             line.setAttribute('stroke', color);
             line.setAttribute('stroke-width', '4');
             line.setAttribute('stroke-linecap', 'round');
+            line.setAttribute('marker-end', `url(#${markerId})`);
 
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
 
@@ -477,8 +575,8 @@
                         lineObj.rawText = newText;
                         const formattedText = newText.replace(/\\n/g, '\n');
                         renderMultilineText(text, formattedText);
-                        updateAllLinesPosition();
                     }
+                    updateAllLinesPosition();
                 }
             });
 
@@ -502,6 +600,8 @@
                 item => !((item.fromCircle === circleA && item.toCircle === circleB) ||
                           (item.fromCircle === circleB && item.toCircle === circleA))
             );
+
+            updateAllLinesPosition();
         }
 
         function removeLinesByCircle(circleElement) {
@@ -516,6 +616,8 @@
             linesData = linesData.filter(
                 item => item.fromCircle !== circleElement && item.toCircle !== circleElement
             );
+
+            updateAllLinesPosition();
         }
 
         stage.addEventListener('click', (e) => {
@@ -559,15 +661,13 @@
             imageInput.value = '';
         });
 
-        // [이미지 저장 시 외곽선 및 삭제 범례 숨김 처리]
+        // [이미지 저장 기능]
         saveBtn.addEventListener('click', () => {
             clearLegendSelection();
             resetConnectingState();
 
-            // 1. 저장용 클래스 추가 (외곽선 및 ✕ 관계 삭제 요소 숨김)
             stage.classList.add('exporting');
 
-            // 2. 캔버스 캡처
             html2canvas(stage, {
                 scale: 2, 
                 useCORS: true, 
@@ -578,7 +678,6 @@
                 link.href = canvas.toDataURL('image/png');
                 link.click();
 
-                // 3. 캡처 완료 후 원래 상태로 복구
                 stage.classList.remove('exporting');
             }).catch(() => {
                 stage.classList.remove('exporting');
